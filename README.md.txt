@@ -1,0 +1,8 @@
+ARDUINO
+I2C LCD
+NTC SENSOR
+4 PUSH BUTTON
+SD CARD
+DS1301 TIMER.
+
+This is a combi thermostad Project.
