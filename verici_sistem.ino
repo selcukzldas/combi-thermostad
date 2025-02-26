@@ -24,12 +24,13 @@ const byte address[8] = {0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x07, 0x08};
 #define DOWN_HISTER_ADDR 4
 
 //degiskenler
+  bool blackLightStatus = true;
   bool editingHisteresis = false;  // Histerizasyon ayarı açık mı?
   int runningMode = 1;
+  float NTCSetValue = 0;
   bool nestedAdjust =false;
   float upHisteresis = 0.5;  // Başlangıç değeri
   float downHisteresis = 0.5;
-  float histeresis =0.5;
   float targetTemperature = 22.0; // Varsayılan hedef sıcaklık
   bool systemActive = false;      // Sistem durumu (başlat/durdur)
   bool isBoilerOn = false;        // Kombi durumu (açık/kapalı)
@@ -140,7 +141,7 @@ const byte address[8] = {0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x07, 0x08};
       {"Versiyon", nullptr, 0, 41},
       {"Hakkında", nullptr, 0, 42}
   };
-
+  
   // Mod Alt Menu
   MenuItem subMenuMode[]{
     {"Tasarruf Mod",nullptr,0,21},
@@ -175,7 +176,7 @@ void setup() {
     pinMode(BTN_EXIT, INPUT_PULLUP);
 
   lcd.begin(16, 2);
-  lcd.setBacklight(1);
+  lcd.setBacklight(blackLightStatus);
 
   lcd.setCursor(0, 0);
   lcd.print("Termostat Basliyor");
@@ -228,100 +229,133 @@ void setup() {
 void loop() {
  
   buttonCheck();
-  if(adjustMode == false){
+  if(!adjustMode){
     HomeView();
   }
 }
 
 void buttonCheck(){
   if (digitalRead(BTN_UP) == LOW) {
-    if(adjustMode==true){
-      btnUpEvents();
-    }
+    btnUpEvents();
     while(digitalRead(BTN_UP) == LOW){}
   }
   if (digitalRead(BTN_DOWN) == LOW) {
-    if(adjustMode==true){
-      btnDownEvents();
-    }
+    btnDownEvents();
     while(digitalRead(BTN_DOWN) == LOW){}
   }
   if (digitalRead(BTN_MENU_OK) == LOW) {
-    if(adjustMode == true){
-      btnOkEvents();
-    }else {
-      adjustMode = true;
-      displayMenu();
-    }
+    btnOkEvents();
     while(digitalRead(BTN_MENU_OK) == LOW){}
   }
   if (digitalRead(BTN_EXIT) == LOW) {
-    if(adjustMode == true){
-      if(currentMenu==mainMenu){
-        adjustMode=false;
-      }else{
-        btnExitEvents();
-      }
-    }
+    btnExitEvents();
+    while(digitalRead(BTN_EXIT) == LOW){}
   }
-  while(digitalRead(BTN_EXIT) == LOW){}
 }
 
 //Buton  Events
 void btnOkEvents(){
-  // Histeresis Control
-  if (currentMenu[selectedIndex].id == 321) {  // Histerizasyon ID kontrolü
-      nestedAdjust =true;
-      displayHisteresis(321);
-  }else if (currentMenu[selectedIndex].id == 322) { 
-      nestedAdjust =true;
-      displayHisteresis(322);
-  } else if (editingHisteresis) {
+  if(adjustMode){
+    if(nestedAdjust){
+      nestedAdjust = false ;
       displayMenu();
-  } else {
-      enterMenu();
+    }else {
+      if (currentMenu == subAyarlarHisteresis)  {  // Histerizasyon ID kontrolü
+        nestedAdjust =true;
+        displayHisteresis(currentMenu[selectedIndex].id );
+      }else if (currentMenu == subMenuMode) { 
+        displayRunMode(currentMenu[selectedIndex].id);
+      } else if (currentMenu[selectedIndex].id == 34) {
+        nestedAdjust =true;
+        displayNTCSet();
+      } else if (currentMenu[selectedIndex].id == 32) {
+        nestedAdjust =true;
+        displayBlacklightSet();
+      } else if (currentMenu[selectedIndex].id == 4) {
+        displayInfo();
+      }else{
+        enterMenu();
+      }
+    }
+  }else {
+    adjustMode = true;
+    displayMenu();
   }
+ 
 }
 
 void btnUpEvents(){
-  if(nestedAdjust){
-    if (currentMenu[selectedIndex].id == 321) { 
+  if(adjustMode){
+    if(nestedAdjust){
+      if (currentMenu[selectedIndex].id == 321) { 
         upHisteresis += 0.1;
         if (upHisteresis > 5.0) upHisteresis = 5.0;
         displayHisteresis(321);
-    } else if (currentMenu[selectedIndex].id == 322) { 
+      } else if (currentMenu[selectedIndex].id == 322) { 
         downHisteresis += 0.1;
         if (downHisteresis > 5.0) downHisteresis = 5.0;
         displayHisteresis(322);
+      } else if (currentMenu[selectedIndex].id == 34) {
+        NTCSetValue += 0.1;
+        if (NTCSetValue > 10.0) NTCSetValue = 10.0;
+        displayNTCSet();
+      } else if (currentMenu[selectedIndex].id == 32) {
+        blackLightStatus = true;
+        displayBlacklightSet();
+      }
+    } else {
+        navigateUp();
     }
-  } else {
-      navigateUp();
+  }else {
+    targetTemperature +=0.1;
   }
 }
 
 void btnDownEvents(){
-  if(nestedAdjust){
-    if (currentMenu[selectedIndex].id == 321) {  // Histerizasyon ID kontrolü
-        upHisteresis -= 0.1;
-        if (upHisteresis < 0.1) upHisteresis = 0.1;  // Minimum değer
-        displayHisteresis(321);
-    } else if (currentMenu[selectedIndex].id == 322) { 
-        downHisteresis -= 0.1;
-        if (downHisteresis < 0.1) downHisteresis = 0.1;  // Minimum değer
-        displayHisteresis(322);
+  if(adjustMode){
+    if(nestedAdjust){
+      if (currentMenu[selectedIndex].id == 321) {  // Histerizasyon ID kontrolü
+          upHisteresis -= 0.1;
+          if (upHisteresis < 0.1) upHisteresis = 0.1;  // Minimum değer
+          displayHisteresis(321);
+      } else if (currentMenu[selectedIndex].id == 322) { 
+          downHisteresis -= 0.1;
+          if (downHisteresis < 0.1) downHisteresis = 0.1;  // Minimum değer
+          displayHisteresis(322);
+      } else if (currentMenu[selectedIndex].id == 34) {
+          NTCSetValue -= 0.1;
+          if (NTCSetValue < 0.0) NTCSetValue = 0.0;
+          displayNTCSet();
+      } else if (currentMenu[selectedIndex].id == 32) {
+        blackLightStatus = false;
+        displayBlacklightSet();
+      }
+    } else {
+        navigateDown();
     }
-  } else {
-      navigateDown();
+  }else {
+    targetTemperature -=0.1;
   }
 }
 
-void btnExitEvents()
-{
-  if (nestedAdjust) {
-      nestedAdjust = false;
-      displayMenu();
-  } else {
-      exitMenu();
+void btnExitEvents(){
+  if(adjustMode){
+    if(currentMenu==mainMenu){
+      if(currentMenu[selectedIndex].id==4){ //Info Page dont go home page.
+        displayMenu();
+      }else {
+        adjustMode=false;
+      }
+    }else{
+      if (nestedAdjust) {
+        nestedAdjust = false;
+        displayMenu();
+      } else {
+          exitMenu();
+      }
+    }
+  }else{
+    toggleSystemState();
   }
 }
 
@@ -332,37 +366,34 @@ void toggleSystemState() {
   //systemMeasureAndViews();
 }
 
-
-
 // Ayar modundan çıkış
 void exitAdjustMode() {
   adjustMode = false;
   EEPROMWriteFloat(TEMP_ADDR, targetTemperature); // EEPROM'a kaydet
-
 }
 
 // Menü Ekranı Güncelleme
 void displayMenu() {
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print(">"); // Seçili olan menü için işaret
-    lcd.print(currentMenu[selectedIndex].name);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print(">"); // Seçili olan menü için işaret
+  lcd.print(currentMenu[selectedIndex].name);
 
-    if (selectedIndex + 1 < currentMenuSize) {
-        lcd.setCursor(1, 1);
-        lcd.print(currentMenu[selectedIndex + 1].name);
-    }
+  if (selectedIndex + 1 < currentMenuSize) {
+      lcd.setCursor(1, 1);
+      lcd.print(currentMenu[selectedIndex + 1].name);
+  }
 }
 
 // Histerizasyon Ekranını Gösterme
-void displayHisteresis(int type) {
+void displayHisteresis(int id) {
     float histeresisValue = 0;
     String  histeresisType = "";
   
-    if(type == 321){
+    if(id == 321){
       histeresisType= "Ust Hister:";
       histeresisValue = upHisteresis;
-    }else if(type== 322){
+    }else if(id== 322){
       histeresisType= "Alt Hister:";
       histeresisValue = downHisteresis;
     }
@@ -371,6 +402,62 @@ void displayHisteresis(int type) {
     lcd.setCursor(0, 0);
     lcd.print(histeresisType);
     lcd.print(histeresisValue, 1); // Ondalık olarak göster (0.1 hassasiyet)
+}
+
+// NTC Set Ekranını Gösterme
+void displayNTCSet() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("NTC Set:");
+  lcd.print(NTCSetValue, 1); // Ondalık olarak göster (0.1 hassasiyet)
+}
+
+//Arka Isık Ac Kapa
+void displayBlacklightSet(){
+  lcd.setBacklight(blackLightStatus);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Arka Isik:");
+  lcd.print(blackLightStatus);
+}
+
+void displayRunMode(int id){
+  if(id == 21){
+    upHisteresis = 0.5;
+    downHisteresis = 1;
+    targetTemperature =20;
+  }else if(id==22){
+    upHisteresis = 0.5;
+    downHisteresis = 0.5;
+    targetTemperature = 21.5;
+  }else if(id == 23){
+    upHisteresis = 1;
+    downHisteresis = 0.5;
+    targetTemperature =22;
+  }
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Kaydedildi");
+  delay(200);
+  displayMenu();
+}
+
+void displayInfo(){
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("HS");
+  lcd.print(targetTemperature);
+  lcd.print(" S:");
+  lcd.print(systemActive ? "A" : "K");
+  lcd.print(" K:");
+  lcd.print(isBoilerOn ? "A" : "K");
+
+  lcd.setCursor(0, 1);
+  lcd.print("UH:");
+  lcd.print(upHisteresis);
+  lcd.print(" DH:");
+  lcd.print(downHisteresis);
 }
 
 // Yukarı Gitme
@@ -415,14 +502,14 @@ void exitMenu() {
 }
 
 void HomeView(){
-  float currentTemperature = NTC(NTC_SENSOR);
+  float currentTemperature = NTC(analogRead(NTC_SENSOR));
 
   // Sistem aktifse kombiyi kontrol et
   if (systemActive) {
-    if (currentTemperature < (targetTemperature - histeresis)) {
+    if (currentTemperature <= (targetTemperature - downHisteresis)) {
       sendBoilerCommand(true); // Kombi Aç
       isBoilerOn = true;
-    } else if (currentTemperature > (targetTemperature + histeresis)) {
+    } else if (currentTemperature >= (targetTemperature + upHisteresis)) {
       sendBoilerCommand(false); // Kombi Kapandı
       isBoilerOn = false;
     }
@@ -433,24 +520,24 @@ void HomeView(){
 
   lcd.setCursor(0,0);
   lcd.print("Oda :");
-  lcd.print(NTC(analogRead(NTC_SENSOR)));
+  lcd.print(currentTemperature);
 
   lcd.setCursor(0,1);
   lcd.print("Term:");
-  lcd.print("21.5");
+  lcd.print(targetTemperature);
 
     
   lcd.setCursor(12,0);
   lcd.write(4);
   lcd.write(4);
   lcd.setCursor(15,0);
-  lcd.write(3);
-    
+  if(systemActive){lcd.write(3);}else{lcd.print("x");}
+  
   lcd.setCursor(12,1);
   lcd.write(5);
   lcd.write(6);
-    
-  fire();
+  lcd.setCursor(15,1);
+  if(isBoilerOn){fire();}else {lcd.print("x");}
 }
 
 double NTC(int ADC1) { // Bu altyordamda sensörden okunan veri hesaplanıyor
@@ -465,12 +552,11 @@ void fire(){
   lcd.setCursor(15, 1);
   lcd.write(2);
 
-  //  for (int i = 0; i < 3; i++) {
-  //   lcd.setCursor(15, 1);
-  //   lcd.write(i);
-  //   if (digitalRead(BTN_MENU_OK)==HIGH) {lcd.clear(); break; }
-  //   delay(250);
-  // }
+ for (int i = 0; i < 3; i++) {
+    lcd.setCursor(15, 1);
+    lcd.write(i);
+    if (digitalRead(BTN_MENU_OK)==LOW) {lcd.clear(); break; }
+  }
 }
 
 // Kombi komutlarını gönder
